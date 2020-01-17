@@ -158,13 +158,16 @@ func (conn *Conn) upgradeToTLS() error {
 // receiveLine accepts a single line FTP command and co-ordinates an
 // appropriate response.
 func (conn *Conn) receiveLine(line string) {
+	//conn.logger.Printf("", ":::::::::::::::recv: %s", line)
 	command, param := conn.parseLine(line)
 	conn.logger.PrintCommand(conn.sessionID, command, param)
+
 	cmdObj := commands[strings.ToUpper(command)]
 	if cmdObj == nil {
 		conn.writeMessage(500, "Command not found")
 		return
 	}
+
 	if cmdObj.RequireParam() && param == "" {
 		conn.writeMessage(553, "action aborted, required param missing")
 	} else if cmdObj.RequireAuth() && conn.user == "" {
@@ -225,6 +228,7 @@ func (conn *Conn) buildPath(filename string) (fullPath string) {
 	} else {
 		fullPath = filepath.Clean(conn.namePrefix)
 	}
+
 	fullPath = strings.Replace(fullPath, "//", "/", -1)
 	fullPath = strings.Replace(fullPath, string(filepath.Separator), "/", -1)
 	return

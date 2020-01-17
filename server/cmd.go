@@ -1057,7 +1057,7 @@ func (cmd commandSize) Execute(conn *Conn, param string) {
 	path := conn.buildPath(param)
 	stat, err := conn.driver.Stat(path)
 	if err != nil {
-		log.Printf("Size: error(%s)", err)
+		log.Printf("file not exists. %s", err)
 		conn.writeMessage(450, fmt.Sprint("path ", path, " not found"))
 	} else {
 		conn.writeMessage(213, strconv.Itoa(int(stat.Size())))

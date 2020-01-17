@@ -5,7 +5,6 @@
 package server_test
 
 import (
-	"github.com/yunnet/chillon/filedriver"
 	"github.com/yunnet/chillon/server"
 	"io/ioutil"
 	"net"
@@ -24,7 +23,7 @@ func runServer(t *testing.T, execute func()) {
 	var perm = server.NewSimplePerm("test", "test")
 	opt := &server.ServerOpts{
 		Name: "test ftpd",
-		Factory: &filedriver.FileDriverFactory{
+		Factory: &server.FileDriverFactory{
 			RootPath: "./testdata",
 			Perm:     perm,
 		},
@@ -125,7 +124,7 @@ func TestServe(t *testing.T) {
 	// Server options without hostname or port
 	opt := &server.ServerOpts{
 		Name: "test ftpd",
-		Factory: &filedriver.FileDriverFactory{
+		Factory: &server.FileDriverFactory{
 			RootPath: "./testdata",
 			Perm:     perm,
 		},

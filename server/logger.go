@@ -19,8 +19,12 @@ type Logger interface {
 // Use an instance of this to log in a standard format
 type StdLogger struct{}
 
+func init() {
+	log.SetFlags(log.Ltime | log.Lshortfile)
+}
+
 func (logger *StdLogger) Print(sessionId string, message interface{}) {
-	log.Printf("%s  %s", sessionId, message)
+	log.Printf("%s", message)
 }
 
 func (logger *StdLogger) Printf(sessionId string, format string, v ...interface{}) {
@@ -28,15 +32,17 @@ func (logger *StdLogger) Printf(sessionId string, format string, v ...interface{
 }
 
 func (logger *StdLogger) PrintCommand(sessionId string, command string, params string) {
-	if command == "PASS" {
-		log.Printf("%s > PASS ****", sessionId)
-	} else {
-		log.Printf("%s > %s %s", sessionId, command, params)
-	}
+	log.Printf("[%s] %s", command, params)
+
+	//if command == "PASS" {
+	//	log.Printf("%s > PASS ****", sessionId)
+	//} else {
+	//	log.Printf("%s %s", command, params)
+	//}
 }
 
 func (logger *StdLogger) PrintResponse(sessionId string, code int, message string) {
-	log.Printf("%s < %d %s", sessionId, code, message)
+	log.Printf("%d %s", code, message)
 }
 
 // Silent logger, produces no output

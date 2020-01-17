@@ -14,11 +14,6 @@ import (
 	"strconv"
 )
 
-// Version returns the library version
-func Version() string {
-	return "0.3.0"
-}
-
 // ServerOpts contains parameters for server.NewServer()
 type ServerOpts struct {
 	// The factory that will be used to create a new FTPDriver instance for
@@ -164,21 +159,25 @@ func NewServer(opts *ServerOpts) *Server {
 // an active net.TCPConn. The TCP connection should already be open before
 // it is handed to this functions. driver is an instance of FTPDriver that
 // will handle all auth and persistence details.
-func (server *Server) newConn(tcpConn net.Conn, driver Driver) *Conn {
-	c := new(Conn)
-	c.namePrefix = "/"
-	c.conn = tcpConn
-	c.controlReader = bufio.NewReader(tcpConn)
-	c.controlWriter = bufio.NewWriter(tcpConn)
-	c.driver = driver
-	c.auth = server.Auth
-	c.server = server
-	c.sessionID = newSessionID()
-	c.logger = server.logger
-	c.tlsConfig = server.tlsConfig
+func (s *Server) newConn(tcpConn net.Conn, driver Driver) *Conn {
+	conn := new(Conn)
+	conn.namePrefix = "/"
+	conn.conn = tcpConn
+	conn.controlReader = bufio.NewReader(tcpConn)
+	conn.controlWriter = bufio.NewWriter(tcpConn)
+	conn.driver = driver
+	conn.auth = s.Auth
+	conn.server = s
+	conn.sessionID = newSessionID()
+	conn.logger = s.logger
+	conn.tlsConfig = s.tlsConfig
 
-	driver.Init(c)
-	return c
+	driver.Init(conn)
+	return conn
+}
+
+func (s *Server)doLogger(sessionId string, format string, v ...interface{})  {
+	s.logger.Printf(sessionId, format, v ...)
 }
 
 func simpleTLSConfig(certFile, keyFile string) (*tls.Config, error) {
@@ -204,78 +203,80 @@ func simpleTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 // errors are trying to bind to a privileged port or something else is already
 // listening on the same port.
 //
-func (server *Server) ListenAndServe() error {
+func (s *Server) ListenAndServe() error {
 	var listener net.Listener
 	var err error
 	var curFeats = featCmds
 
-	if server.ServerOpts.TLS {
-		server.tlsConfig, err = simpleTLSConfig(server.CertFile, server.KeyFile)
+	if s.ServerOpts.TLS {
+		s.tlsConfig, err = simpleTLSConfig(s.CertFile, s.KeyFile)
 		if err != nil {
 			return err
 		}
 
 		curFeats += " AUTH TLS\n PBSZ\n PROT\n"
 
-		if server.ServerOpts.ExplicitFTPS {
-			listener, err = net.Listen("tcp", server.listenTo)
+		if s.ServerOpts.ExplicitFTPS {
+			listener, err = net.Listen("tcp", s.listenTo)
 		} else {
-			listener, err = tls.Listen("tcp", server.listenTo, server.tlsConfig)
+			listener, err = tls.Listen("tcp", s.listenTo, s.tlsConfig)
 		}
 	} else {
-		listener, err = net.Listen("tcp", server.listenTo)
+		listener, err = net.Listen("tcp", s.listenTo)
 	}
+
 	if err != nil {
 		return err
 	}
-	server.feats = fmt.Sprintf(feats, curFeats)
+	s.feats = fmt.Sprintf(feats, curFeats)
 
-	sessionID := ""
-	server.logger.Printf(sessionID, "%s listening on %d", server.Name, server.Port)
+	s.doLogger("", "%s listening on %d", s.Name, s.Port)
 
-	return server.Serve(listener)
+	return s.Serve(listener)
 }
 
 // Serve accepts connections on a given net.Listener and handles each
 // request in a new goroutine.
 //
-func (server *Server) Serve(l net.Listener) error {
-	server.listener = l
-	server.ctx, server.cancel = context.WithCancel(context.Background())
+func (s *Server) Serve(l net.Listener) error {
+	s.listener = l
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	sessionID := ""
 	for {
-		tcpConn, err := server.listener.Accept()
+		tcpConn, err := s.listener.Accept()
 		if err != nil {
 			select {
-			case <-server.ctx.Done():
+			case <-s.ctx.Done():
 				return ErrServerClosed
 			default:
 			}
-			server.logger.Printf(sessionID, "listening error: %v", err)
+			s.logger.Printf(sessionID, "listening error: %v", err)
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				continue
 			}
 			return err
 		}
-		driver, err := server.Factory.NewDriver()
+		driver, err := s.Factory.NewDriver()
 		if err != nil {
-			server.logger.Printf(sessionID, "Error creating driver, aborting client connection: %v", err)
+			s.logger.Printf(sessionID, "Error creating driver, aborting client connection: %v", err)
 			tcpConn.Close()
 		} else {
-			ftpConn := server.newConn(tcpConn, driver)
+			ftpConn := s.newConn(tcpConn, driver)
 			go ftpConn.Serve()
 		}
 	}
 }
 
 // Shutdown will gracefully stop a server. Already connected clients will retain their connections
-func (server *Server) Shutdown() error {
-	if server.cancel != nil {
-		server.cancel()
+func (s *Server) Shutdown() error {
+	if s.cancel != nil {
+		s.cancel()
 	}
-	if server.listener != nil {
-		return server.listener.Close()
+
+	if s.listener != nil {
+		return s.listener.Close()
 	}
-	// server wasnt even started
+
+	// s wasnt even started
 	return nil
 }

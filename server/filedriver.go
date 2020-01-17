@@ -1,10 +1,10 @@
-package filedriver
+package server
+
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/yunnet/chillon/server"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,10 +13,10 @@ import (
 
 type FileDriver struct {
 	RootPath string
-	server.Perm
+	Perm
 }
 
-type FileInfo struct {
+type FileInfoEx struct {
 	os.FileInfo
 
 	mode  os.FileMode
@@ -24,99 +24,102 @@ type FileInfo struct {
 	group string
 }
 
-func (f *FileInfo) Mode() os.FileMode {
+func (f *FileInfoEx) Mode() os.FileMode {
 	return f.mode
 }
 
-func (f *FileInfo) Owner() string {
+func (f *FileInfoEx) Owner() string {
 	return f.owner
 }
 
-func (f *FileInfo) Group() string {
+func (f *FileInfoEx) Group() string {
 	return f.group
 }
 
-func (driver *FileDriver) realPath(path string) string {
+func (f *FileDriver) realPath(path string) string {
 	paths := strings.Split(path, "/")
-	return filepath.Join(append([]string{driver.RootPath}, paths...)...)
+	return filepath.Join(append([]string{f.RootPath}, paths...)...)
 }
 
-func (driver *FileDriver) Init(conn *server.Conn) {
+func (f *FileDriver) Init(conn *Conn) {
 	//driver.conn = conn
 }
 
-func (driver *FileDriver) ChangeDir(path string) error {
-	rPath := driver.realPath(path)
-	f, err := os.Lstat(rPath)
+func (f *FileDriver) ChangeDir(path string) error {
+	rPath := f.realPath(path)
+	r, err := os.Lstat(rPath)
 	if err != nil {
 		return err
 	}
-	if f.IsDir() {
+	if r.IsDir() {
 		return nil
 	}
 	return errors.New("Not a directory")
 }
 
-func (driver *FileDriver) Stat(path string) (server.FileInfo, error) {
-	basepath := driver.realPath(path)
+func (f *FileDriver) Stat(path string) (FileInfo, error) {
+	basepath := f.realPath(path)
 	rPath, err := filepath.Abs(basepath)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := os.Lstat(rPath)
+	r, err := os.Lstat(rPath)
 	if err != nil {
-		fmt.Println("error file name: " + rPath)
+		//fmt.Println("file not exists. " + rPath)
 		return nil, err
 	}
 
-	if jsonStr, err := json.Marshal(f); err == nil{
+	if jsonStr, err := json.Marshal(r); err == nil{
 		fmt.Println("ok file name: " + path)
 		fmt.Println(string(jsonStr))
 	}
 
-	mode, err := driver.Perm.GetMode(path)
+	mode, err := f.Perm.GetMode(path)
 	if err != nil {
 		return nil, err
 	}
-	if f.IsDir() {
+	if r.IsDir() {
 		mode |= os.ModeDir
 	}
-	owner, err := driver.Perm.GetOwner(path)
+	owner, err := f.Perm.GetOwner(path)
 	if err != nil {
 		return nil, err
 	}
-	group, err := driver.Perm.GetGroup(path)
+	group, err := f.Perm.GetGroup(path)
 	if err != nil {
 		return nil, err
 	}
-	return &FileInfo{f, mode, owner, group}, nil
+	return &FileInfoEx{r, mode, owner, group}, nil
 }
 
-func (driver *FileDriver) ListDir(path string, callback func(server.FileInfo) error) error {
-	basepath := driver.realPath(path)
+func (c *FileDriver) ListDir(path string, callback func(FileInfo) error) error {
+	basepath := c.realPath(path)
 	return filepath.Walk(basepath, func(f string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		rPath, _ := filepath.Rel(basepath, f)
 		if rPath == info.Name() {
-			mode, err := driver.Perm.GetMode(rPath)
+			mode, err := c.Perm.GetMode(rPath)
 			if err != nil {
 				return err
 			}
 			if info.IsDir() {
 				mode |= os.ModeDir
 			}
-			owner, err := driver.Perm.GetOwner(rPath)
+
+			owner, err := c.Perm.GetOwner(rPath)
 			if err != nil {
 				return err
 			}
-			group, err := driver.Perm.GetGroup(rPath)
+
+			group, err := c.Perm.GetGroup(rPath)
 			if err != nil {
 				return err
 			}
-			err = callback(&FileInfo{info, mode, owner, group})
+
+			err = callback(&FileInfoEx{info, mode, owner, group})
 			if err != nil {
 				return err
 			}
@@ -128,20 +131,20 @@ func (driver *FileDriver) ListDir(path string, callback func(server.FileInfo) er
 	})
 }
 
-func (driver *FileDriver) DeleteDir(path string) error {
-	rPath := driver.realPath(path)
-	f, err := os.Lstat(rPath)
+func (f *FileDriver) DeleteDir(path string) error {
+	rPath := f.realPath(path)
+	r, err := os.Lstat(rPath)
 	if err != nil {
 		return err
 	}
-	if f.IsDir() {
+	if r.IsDir() {
 		return os.Remove(rPath)
 	}
 	return errors.New("Not a directory")
 }
 
-func (driver *FileDriver) DeleteFile(path string) error {
-	rPath := driver.realPath(path)
+func (c *FileDriver) DeleteFile(path string) error {
+	rPath := c.realPath(path)
 	f, err := os.Lstat(rPath)
 	if err != nil {
 		return err
@@ -152,41 +155,42 @@ func (driver *FileDriver) DeleteFile(path string) error {
 	return errors.New("Not a file")
 }
 
-func (driver *FileDriver) Rename(fromPath string, toPath string) error {
-	oldPath := driver.realPath(fromPath)
-	newPath := driver.realPath(toPath)
+func (f *FileDriver) Rename(fromPath string, toPath string) error {
+	oldPath := f.realPath(fromPath)
+	newPath := f.realPath(toPath)
 	return os.Rename(oldPath, newPath)
 }
 
-func (driver *FileDriver) MakeDir(path string) error {
-	rPath := driver.realPath(path)
+func (f *FileDriver) MakeDir(path string) error {
+	rPath := f.realPath(path)
 	return os.MkdirAll(rPath, os.ModePerm)
 }
 
-func (driver *FileDriver) GetFile(path string, offset int64) (int64, io.ReadCloser, error) {
-	rPath := driver.realPath(path)
-	f, err := os.Open(rPath)
+func (f *FileDriver) GetFile(path string, offset int64) (int64, io.ReadCloser, error) {
+	rPath := f.realPath(path)
+	r, err := os.Open(rPath)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	info, err := f.Stat()
+	info, err := r.Stat()
 	if err != nil {
 		return 0, nil, err
 	}
 
-	f.Seek(offset, os.SEEK_SET)
+	r.Seek(offset, io.SeekStart)
 
-	return info.Size(), f, nil
+	return info.Size(), r, nil
 }
 
-func (driver *FileDriver) PutFile(destPath string, data io.Reader, appendData bool) (int64, error) {
-	rPath := driver.realPath(destPath)
+func (f *FileDriver) PutFile(destPath string, data io.Reader, appendData bool) (int64, error) {
+	rPath := f.realPath(destPath)
+
 	var isExist bool
-	f, err := os.Lstat(rPath)
+	r, err := os.Lstat(rPath)
 	if err == nil {
 		isExist = true
-		if f.IsDir() {
+		if r.IsDir() {
 			return 0, errors.New("A dir has the same name")
 		}
 	} else {
@@ -208,12 +212,12 @@ func (driver *FileDriver) PutFile(destPath string, data io.Reader, appendData bo
 				return 0, err
 			}
 		}
-		f, err := os.Create(rPath)
+		r, err := os.Create(rPath)
 		if err != nil {
 			return 0, err
 		}
-		defer f.Close()
-		bytes, err := io.Copy(f, data)
+		defer r.Close()
+		bytes, err := io.Copy(r, data)
 		if err != nil {
 			return 0, err
 		}
@@ -226,7 +230,7 @@ func (driver *FileDriver) PutFile(destPath string, data io.Reader, appendData bo
 	}
 	defer of.Close()
 
-	_, err = of.Seek(0, os.SEEK_END)
+	_, err = of.Seek(0, io.SeekEnd)
 	if err != nil {
 		return 0, err
 	}
@@ -241,9 +245,9 @@ func (driver *FileDriver) PutFile(destPath string, data io.Reader, appendData bo
 
 type FileDriverFactory struct {
 	RootPath string
-	server.Perm
+	Perm
 }
 
-func (factory *FileDriverFactory) NewDriver() (server.Driver, error) {
-	return &FileDriver{factory.RootPath, factory.Perm}, nil
+func (f *FileDriverFactory) NewDriver() (Driver, error) {
+	return &FileDriver{f.RootPath, f.Perm}, nil
 }

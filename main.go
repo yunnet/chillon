@@ -1,21 +1,29 @@
 package main
 
 import (
-	"github.com/lunny/log"
-	"github.com/yunnet/chillon/filedriver"
 	"github.com/yunnet/chillon/server"
+	"log"
 	"os"
 )
 
 func main() {
+	logfile, err := os.Create("chillon.log")
+	if err != nil{
+		log.Fatal("fail to create chillon.log file.")
+	}
+	logger := log.New(logfile, "", log.Llongfile)
+
+
 	upload := "./upload"
-	_, err := os.Stat(upload)
+	listenPort := 2121
+
+	_, err = os.Stat(upload)
 	if os.IsNotExist(err){
 		os.MkdirAll(upload, os.ModePerm)
 	}
 
 	perm := server.NewSimplePerm("root", "root")
-	factory := &filedriver.FileDriverFactory{
+	factory := &server.FileDriverFactory{
 		RootPath: upload,
 		Perm:     perm,
 	}
@@ -29,7 +37,7 @@ func main() {
 		Hostname:       "",
 		PublicIp:       "",
 		PassivePorts:   "",
-		Port:           2121,
+		Port:           listenPort,
 		TLS:            false,
 		CertFile:       "",
 		KeyFile:        "",
@@ -39,9 +47,9 @@ func main() {
 	}
 	ftpserver := server.NewServer(opt)
 
-	log.Info("FTP Server start...", 2121)
+	logger.Println("FTP Server start...", 2121)
 
 	if err := ftpserver.ListenAndServe(); err != nil{
-		log.Fatal("Error starting server: ", err)
+		logger.Fatal("Error starting server: ", err)
 	}
 }
